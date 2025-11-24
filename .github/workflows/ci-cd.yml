@@ -1,0 +1,96 @@
+name: Build, Push & Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.PACKAGE_NAME }}:latest
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Copy Compose File
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          source: "compose.yaml"
+          target: "/home/${{ secrets.VPS_USER }}/ninja-ai-golang"
+
+      - name: Deploy via SSH (sudo via stdin)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          request_pty: true
+          script: |
+            set -euo pipefail
+
+            cd ~/ninja-ai-golang
+
+            # Detect compose command
+            if docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="docker compose"
+            elif docker-compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            else
+              echo "❌ ERROR: docker compose or docker-compose not found"
+              exit 1
+            fi
+
+            # read password from environment securely (provided by the action)
+            SUDO_PASS="${{ secrets.VPS_PASSWORD }}"
+
+            # helper to run sudo with password fed via stdin and no prompt printed
+            run_sudo() {
+              # -S read from stdin; -p "" set empty prompt so no extra output
+              printf "%s\n" "$SUDO_PASS" | sudo -S -p "" -- "$@"
+            }
+
+            # Pull, down, up, prune
+            run_sudo $COMPOSE_CMD pull
+            run_sudo $COMPOSE_CMD down --remove-orphans
+            run_sudo $COMPOSE_CMD up -d
+            run_sudo docker system prune -f
+
+            echo "✅ Deployment complete"

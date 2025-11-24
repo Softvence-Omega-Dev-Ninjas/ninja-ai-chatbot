@@ -1,0 +1,18 @@
+services:
+  chatbot:
+    platform: linux/amd64
+    image: softvence/ai_chatbot:latest
+    container_name: ai_chatbot
+    ports:
+      - "3000:3000"
+    restart: always
+    command: >
+      sh -c "
+        echo '🚀 Starting app on 0.0.0.0...';
+        HOST=0.0.0.0 PORT=3000 npm run start
+      "
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://0.0.0.0:3000']
+      interval: 30s
+      timeout: 10s
+      retries: 5
