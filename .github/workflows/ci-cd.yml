@@ -53,7 +53,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           source: "compose.yaml"
-          target: "/home/${{ secrets.VPS_USER }}/ninja-ai-golang"
+          target: "/home/${{ secrets.VPS_USER }}/ninja-ai-chat"
 
       - name: Deploy via SSH (sudo via stdin)
         uses: appleboy/ssh-action@v1.0.3
@@ -66,7 +66,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            cd ~/ninja-ai-golang
+            cd ~/ninja-ai-chat
 
             # Detect compose command
             if docker compose version >/dev/null 2>&1; then
